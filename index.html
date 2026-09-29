@@ -181,7 +181,23 @@
       console.log(error);
     });
   }
+  
+const configuracion = {
+  fps: 15,
 
+  qrbox: function(viewfinderWidth, viewfinderHeight) {
+    return {
+      width: Math.floor(viewfinderWidth * 0.90),
+      height: Math.floor(viewfinderHeight * 0.45)
+    };
+  },
+
+  formatsToSupport: [
+    Html5QrcodeSupportedFormats.EAN_13
+  ],
+
+  aspectRatio: 1.777778
+};
 
   function reiniciarEscaner() {
 
