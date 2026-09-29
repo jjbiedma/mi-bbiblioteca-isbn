@@ -3,16 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+        content="width=device-width, initial-scale=1, maximum-scale=1">
 
   <title>Lector ISBN - Mi Biblioteca</title>
 
-  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script src="https://unpkg.com/@zxing/library@0.21.3"></script>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -24,44 +22,62 @@
 
     .contenedor {
       max-width: 520px;
-      margin: 0 auto;
+      margin: auto;
     }
 
     h1 {
-      margin-bottom: 6px;
+      margin-bottom: 5px;
       font-size: 32px;
     }
 
     .subtitulo {
       color: #7b8791;
-      margin-bottom: 25px;
+      margin-bottom: 24px;
       font-size: 18px;
     }
 
     .tarjeta {
       background: white;
+      padding: 20px;
       border-radius: 22px;
-      padding: 22px;
-      box-shadow: 0 4px 18px rgba(0,0,0,0.06);
+      box-shadow: 0 4px 18px rgba(0,0,0,.06);
     }
 
-    #reader {
-      width: 100%;
+    .visor {
+      position: relative;
       overflow: hidden;
       border-radius: 16px;
+      background: #111;
+    }
+
+    video {
+      display: block;
+      width: 100%;
+      min-height: 300px;
+      object-fit: cover;
+    }
+
+    .guia {
+      position: absolute;
+      left: 5%;
+      right: 5%;
+      top: 38%;
+      height: 24%;
+      border: 3px solid white;
+      border-radius: 10px;
+      pointer-events: none;
     }
 
     #resultado {
-      margin-top: 22px;
+      display: none;
+      margin-top: 20px;
       padding: 18px;
+      text-align: center;
       background: #eef5f6;
       border-radius: 15px;
-      text-align: center;
-      display: none;
     }
 
     .etiqueta {
-      font-size: 15px;
       color: #71808a;
       margin-bottom: 7px;
     }
@@ -72,14 +88,15 @@
       letter-spacing: 1px;
     }
 
-    .mensaje {
+    #mensaje {
       margin-top: 18px;
-      color: #71808a;
       text-align: center;
-      line-height: 1.4;
+      color: #71808a;
+      line-height: 1.45;
     }
 
     button {
+      display: none;
       width: 100%;
       margin-top: 18px;
       padding: 16px;
@@ -102,119 +119,115 @@
 
   <div class="tarjeta">
 
-    <div id="reader"></div>
+    <div class="visor">
+      <video id="video" playsinline muted></video>
+      <div class="guia"></div>
+    </div>
 
     <div id="resultado">
       <div class="etiqueta">ISBN detectado</div>
       <div id="isbnResultado" class="isbn"></div>
     </div>
 
-    <div id="mensaje" class="mensaje">
-      Permití el acceso a la cámara y apuntá al código de barras del libro.
+    <div id="mensaje">
+      Apuntá al código de barras de la contratapa.
     </div>
 
-    <button id="reiniciar"
-            style="display:none;"
-            onclick="reiniciarEscaner()">
+    <button id="reiniciar" onclick="location.reload()">
       Escanear otro libro
     </button>
 
   </div>
+
 </div>
 
 <script>
+  let terminado = false;
 
-  let scanner;
-  let detectado = false;
+  async function iniciar() {
 
-  function iniciarEscaner() {
+    const mensaje = document.getElementById("mensaje");
 
-    detectado = false;
+    try {
 
-    scanner = new Html5Qrcode("reader");
+      const hints = new Map();
 
-    const configuracion = {
-      fps: 10,
-      qrbox: {
-        width: 280,
-        height: 120
+      hints.set(
+        ZXing.DecodeHintType.POSSIBLE_FORMATS,
+        [
+          ZXing.BarcodeFormat.EAN_13,
+          ZXing.BarcodeFormat.UPC_A
+        ]
+      );
+
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+      const lector = new ZXing.BrowserMultiFormatReader(hints);
+
+      const dispositivos =
+        await lector.listVideoInputDevices();
+
+      if (!dispositivos.length) {
+        throw new Error("No se encontró ninguna cámara.");
       }
-    };
 
-    scanner.start(
-      { facingMode: "environment" },
-      configuracion,
+      /*
+       * En iPhone normalmente la última cámara de la lista
+       * corresponde a una cámara trasera.
+       */
+      const camara =
+        dispositivos[dispositivos.length - 1].deviceId;
 
-      function(codigo) {
+      lector.decodeFromVideoDevice(
+        camara,
+        "video",
+        function(resultado, error) {
 
-        if (detectado) return;
+          if (terminado || !resultado) return;
 
-        const isbn = String(codigo)
-          .replace(/[^0-9X]/gi, "");
+          const codigo =
+            String(resultado.getText() || "")
+            .replace(/\D/g, "");
 
-        if (isbn.length !== 13 && isbn.length !== 10) {
-          return;
+          /*
+           * ISBN-13 comienza normalmente con 978 o 979.
+           */
+          if (
+            codigo.length === 13 &&
+            (codigo.startsWith("978") ||
+             codigo.startsWith("979"))
+          ) {
+
+            terminado = true;
+
+            document.getElementById("isbnResultado")
+              .textContent = codigo;
+
+            document.getElementById("resultado")
+              .style.display = "block";
+
+            document.getElementById("reiniciar")
+              .style.display = "block";
+
+            mensaje.textContent =
+              "ISBN leído correctamente.";
+
+            lector.reset();
+          }
         }
+      );
 
-        detectado = true;
+    } catch (error) {
 
-        document.getElementById("isbnResultado").textContent = isbn;
-        document.getElementById("resultado").style.display = "block";
-        document.getElementById("mensaje").textContent =
-          "ISBN leído correctamente.";
-        document.getElementById("reiniciar").style.display = "block";
-
-        scanner.stop().catch(function() {});
-      },
-
-      function() {
-        // Los intentos de lectura fallidos se ignoran.
-      }
-    )
-
-    .catch(function(error) {
-
-      document.getElementById("mensaje").innerHTML =
-        "No se pudo abrir la cámara.<br><br>" +
-        "Verificá que el navegador tenga permiso para utilizarla.";
+      mensaje.innerHTML =
+        "No se pudo iniciar el lector.<br><br>" +
+        String(error.message || error);
 
       console.log(error);
-    });
-  }
-  
-const configuracion = {
-  fps: 15,
-
-  qrbox: function(viewfinderWidth, viewfinderHeight) {
-    return {
-      width: Math.floor(viewfinderWidth * 0.90),
-      height: Math.floor(viewfinderHeight * 0.45)
-    };
-  },
-
-  formatsToSupport: [
-    Html5QrcodeSupportedFormats.EAN_13
-  ],
-
-  aspectRatio: 1.777778
-};
-
-  function reiniciarEscaner() {
-
-    document.getElementById("resultado").style.display = "none";
-    document.getElementById("reiniciar").style.display = "none";
-
-    document.getElementById("mensaje").textContent =
-      "Apuntá al código de barras del libro.";
-
-    document.getElementById("reader").innerHTML = "";
-
-    iniciarEscaner();
+    }
   }
 
-
-  window.addEventListener("load", iniciarEscaner);
-
+  window.addEventListener("load", iniciar);
 </script>
 
 </body>
