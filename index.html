@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+
   <meta name="viewport"
         content="width=device-width, initial-scale=1, maximum-scale=1">
 
@@ -38,43 +39,59 @@
 
     .tarjeta {
       background: white;
-      padding: 20px;
+      padding: 22px;
       border-radius: 22px;
       box-shadow: 0 4px 18px rgba(0,0,0,.06);
     }
 
-    .visor {
-      position: relative;
-      overflow: hidden;
-      border-radius: 16px;
-      background: #111;
+    .instruccion {
+      text-align: center;
+      color: #63727c;
+      line-height: 1.5;
+      margin-bottom: 20px;
     }
 
-    video {
+    .boton {
       display: block;
       width: 100%;
-      min-height: 300px;
-      object-fit: cover;
+      padding: 17px;
+      border: 0;
+      border-radius: 14px;
+      background: #286f80;
+      color: white;
+      font-size: 18px;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
     }
 
-    .guia {
-      position: absolute;
-      left: 5%;
-      right: 5%;
-      top: 38%;
-      height: 24%;
-      border: 3px solid white;
-      border-radius: 10px;
-      pointer-events: none;
+    input[type="file"] {
+      display: none;
+    }
+
+    #vistaPrevia {
+      display: none;
+      width: 100%;
+      max-height: 420px;
+      object-fit: contain;
+      margin-top: 20px;
+      border-radius: 14px;
+    }
+
+    #procesando {
+      display: none;
+      margin-top: 18px;
+      text-align: center;
+      color: #63727c;
     }
 
     #resultado {
       display: none;
       margin-top: 20px;
       padding: 18px;
-      text-align: center;
       background: #eef5f6;
       border-radius: 15px;
+      text-align: center;
     }
 
     .etiqueta {
@@ -88,24 +105,21 @@
       letter-spacing: 1px;
     }
 
-    #mensaje {
+    #error {
+      display: none;
       margin-top: 18px;
-      text-align: center;
-      color: #71808a;
-      line-height: 1.45;
+      padding: 15px;
+      background: #fff3f0;
+      border-radius: 12px;
+      color: #934735;
+      line-height: 1.4;
     }
 
-    button {
+    .reintentar {
       display: none;
-      width: 100%;
-      margin-top: 18px;
-      padding: 16px;
-      border: 0;
-      border-radius: 14px;
-      background: #286f80;
-      color: white;
-      font-size: 18px;
-      font-weight: 600;
+      margin-top: 16px;
+      background: #e8eef0;
+      color: #27434d;
     }
   </style>
 </head>
@@ -119,9 +133,26 @@
 
   <div class="tarjeta">
 
-    <div class="visor">
-      <video id="video" playsinline muted></video>
-      <div class="guia"></div>
+    <div class="instruccion">
+      Fotografá de cerca el código de barras de la contratapa.<br>
+      Procurá que las barras ocupen buena parte de la foto.
+    </div>
+
+    <label class="boton" for="fotoISBN">
+      📷 Fotografiar código ISBN
+    </label>
+
+    <input
+      id="fotoISBN"
+      type="file"
+      accept="image/*"
+      capture="environment"
+    >
+
+    <img id="vistaPrevia" alt="Código ISBN">
+
+    <div id="procesando">
+      Analizando código de barras...
     </div>
 
     <div id="resultado">
@@ -129,24 +160,53 @@
       <div id="isbnResultado" class="isbn"></div>
     </div>
 
-    <div id="mensaje">
-      Apuntá al código de barras de la contratapa.
-    </div>
+    <div id="error"></div>
 
-    <button id="reiniciar" onclick="location.reload()">
-      Escanear otro libro
+    <button
+      id="reintentar"
+      class="boton reintentar"
+      onclick="reiniciar()">
+      Intentar otra foto
     </button>
 
   </div>
-
 </div>
 
 <script>
-  let terminado = false;
 
-  async function iniciar() {
+  const input = document.getElementById("fotoISBN");
+  const imagen = document.getElementById("vistaPrevia");
+  const procesando = document.getElementById("procesando");
+  const resultado = document.getElementById("resultado");
+  const isbnResultado = document.getElementById("isbnResultado");
+  const errorCaja = document.getElementById("error");
+  const reintentar = document.getElementById("reintentar");
 
-    const mensaje = document.getElementById("mensaje");
+  input.addEventListener("change", function(event) {
+
+    const archivo = event.target.files[0];
+
+    if (!archivo) return;
+
+    resultado.style.display = "none";
+    errorCaja.style.display = "none";
+    reintentar.style.display = "none";
+
+    const url = URL.createObjectURL(archivo);
+
+    imagen.onload = function() {
+
+      imagen.style.display = "block";
+      procesando.style.display = "block";
+
+      leerCodigo();
+    };
+
+    imagen.src = url;
+  });
+
+
+  async function leerCodigo() {
 
     try {
 
@@ -160,74 +220,77 @@
         ]
       );
 
-      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-
-      const lector = new ZXing.BrowserMultiFormatReader(hints);
-
-      const dispositivos =
-        await lector.listVideoInputDevices();
-
-      if (!dispositivos.length) {
-        throw new Error("No se encontró ninguna cámara.");
-      }
-
-      /*
-       * En iPhone normalmente la última cámara de la lista
-       * corresponde a una cámara trasera.
-       */
-      const camara =
-        dispositivos[dispositivos.length - 1].deviceId;
-
-      lector.decodeFromVideoDevice(
-        camara,
-        "video",
-        function(resultado, error) {
-
-          if (terminado || !resultado) return;
-
-          const codigo =
-            String(resultado.getText() || "")
-            .replace(/\D/g, "");
-
-          /*
-           * ISBN-13 comienza normalmente con 978 o 979.
-           */
-          if (
-            codigo.length === 13 &&
-            (codigo.startsWith("978") ||
-             codigo.startsWith("979"))
-          ) {
-
-            terminado = true;
-
-            document.getElementById("isbnResultado")
-              .textContent = codigo;
-
-            document.getElementById("resultado")
-              .style.display = "block";
-
-            document.getElementById("reiniciar")
-              .style.display = "block";
-
-            mensaje.textContent =
-              "ISBN leído correctamente.";
-
-            lector.reset();
-          }
-        }
+      hints.set(
+        ZXing.DecodeHintType.TRY_HARDER,
+        true
       );
 
-    } catch (error) {
+      const lector =
+        new ZXing.BrowserMultiFormatReader(hints);
 
-      mensaje.innerHTML =
-        "No se pudo iniciar el lector.<br><br>" +
-        String(error.message || error);
+      const lectura =
+        await lector.decodeFromImage(imagen);
 
-      console.log(error);
+      const codigo =
+        String(lectura.getText() || "")
+          .replace(/\D/g, "");
+
+      procesando.style.display = "none";
+
+      if (
+        codigo.length === 13 &&
+        (codigo.startsWith("978") ||
+         codigo.startsWith("979"))
+      ) {
+
+        isbnResultado.textContent = codigo;
+        resultado.style.display = "block";
+
+      } else {
+
+        mostrarError(
+          "Se detectó un código, pero no parece ser un ISBN-13: " +
+          codigo
+        );
+      }
+
+    } catch (e) {
+
+      procesando.style.display = "none";
+
+      mostrarError(
+        "No pude reconocer el ISBN en esta foto. " +
+        "Probá acercándote más al código, con buena luz " +
+        "y evitando reflejos."
+      );
+
+      console.log(e);
     }
   }
 
-  window.addEventListener("load", iniciar);
+
+  function mostrarError(texto) {
+
+    errorCaja.textContent = texto;
+    errorCaja.style.display = "block";
+    reintentar.style.display = "block";
+  }
+
+
+  function reiniciar() {
+
+    input.value = "";
+    imagen.src = "";
+    imagen.style.display = "none";
+
+    resultado.style.display = "none";
+    errorCaja.style.display = "none";
+    reintentar.style.display = "none";
+    procesando.style.display = "none";
+
+    input.click();
+  }
+
 </script>
 
 </body>
